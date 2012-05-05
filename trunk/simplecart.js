@@ -772,7 +772,7 @@ function Cart(){
 			case NZD:
 			case HKD:
 			case SGD:
-				return "Rp;";
+				return "&Rp;";
 			default:
 				return "";
 		}
@@ -780,7 +780,7 @@ function Cart(){
 
 
 	me.currencyStringForPaypalCheckout = function( value ){
-		if( me.currencySymbol() == "Rp;" ){
+		if( me.currencySymbol() == "&Rp;" ){
 			return "$" + parseFloat( value ).toFixed(2);
 		} else {
 			return "" + parseFloat(value ).toFixed(2);
