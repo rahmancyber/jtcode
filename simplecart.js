@@ -32,7 +32,7 @@ function Cart(){
 	var me = this;
 	/* member variables */
 	me.nextId = 1;
-	me.Version = '2.2.2';
+	me.Version = '2.2';
 	me.Shelf = null;
 	me.items = {};
 	me.isLoaded = false;
@@ -56,9 +56,6 @@ function Cart(){
 	me.storagePrefix = "sc_";
 	me.MAX_COOKIE_SIZE = 4000;
 	me.cartHeaders = ['Name','Price','Quantity','Total'];
-	me.events = {};
-	me.sandbox = false;
-	me.paypalHTTPMethod = "GET";
 	/*
 		cart headers:
 		you can set these to which ever order you would like, and the cart will display the appropriate headers
@@ -118,25 +115,17 @@ function Cart(){
 
 		newItem.parseValuesFromArray( argumentArray );
 		newItem.checkQuantityAndPrice();
-		
-		if( me.trigger('beforeAdd', [newItem] ) === false ){
-			return false;
-		}
-		var isNew = true;
 
 		/* if the item already exists, update the quantity */
 		if( me.hasItem(newItem) ) {
 			var foundItem=me.hasItem(newItem);
-			foundItem.quantity= parseInt(foundItem.quantity,100) + parseInt(newItem.quantity,100);
+			foundItem.quantity= parseInt(foundItem.quantity,10) + parseInt(newItem.quantity,10);
 			newItem = foundItem;
-			isNew = false;
 		} else {
 			me.items[newItem.id] = newItem;
 		}
 
 		me.update();
-		me.trigger('afterAdd', [newItem,isNew] );
-		
 		return newItem;
 		
 	};
@@ -154,8 +143,8 @@ function Cart(){
 	};
 
 	me.empty = function () {
-		me.items = {};
-		me.update();
+		simpleCart.items = {};
+		simpleCart.update();
 	};
 
 	/******************************************************
@@ -189,7 +178,7 @@ function Cart(){
 	
 	me.each = function( array , callback ){
 		var next,
-			x=0,
+			x=0, 
 			result;
 
 		if( typeof array === 'function' ){
@@ -216,7 +205,7 @@ function Cart(){
 	
 	
 	me.chunk = function(str, n) {
-		if (typeof n==='undefined'){
+		if (typeof n==='undefined'){ 
 			n=2;
 		}
 		var result = str.match(RegExp('.{1,'+n+'}','g'));
@@ -229,102 +218,90 @@ function Cart(){
 	 ******************************************************/
 
 	me.checkout = function() {
-		if( me.quantity === 0 ){
+		if( simpleCart.quantity === 0 ){
 			error("Cart is empty");
-			return false;
+			return;
 		}
-		switch( me.checkoutTo ){
+		switch( simpleCart.checkoutTo ){
 			case PayPal:
-				me.paypalCheckout();
+				simpleCart.paypalCheckout();
 				break;
 			case GoogleCheckout:
-				me.googleCheckout();
+				simpleCart.googleCheckout();
 				break;
 			case Email:
-				me.emailCheckout();
+				simpleCart.emailCheckout();
 				break;
 			default:
-				me.customCheckout();
+				simpleCart.customCheckout();
 				break;
 		}
 	};
 
 	me.paypalCheckout = function() {
 
-		
-		var form = document.createElement("form"),
-			counter=1,
+		var me = this,
+			winpar = "scrollbars,location,resizable,status",
+			strn  = "https://www.paypal.com/cgi-bin/webscr?cmd=_cart" +
+					"&upload=1" +
+					"&business=" + me.email +
+					"&currency_code=" + me.currency,
+			counter = 1,
+			itemsString = "",
 			current,
 			item,
-			descriptionString;
-			
-		form.style.display = "none";
-		form.method = me.paypalHTTPMethod =="GET" || me.paypalHTTPMethod == "POST" ? me.paypalHTTPMethod : "GET";
-		form.action = me.sandbox ? "https://www.sandbox.paypal.com/cgi-bin/webscr" : "https://www.paypal.com/cgi-bin/webscr";
-		form.acceptCharset = "utf-8";
-			
-			
-		// setup hidden fields
-		form.appendChild(me.createHiddenElement("cmd", "_cart"));
-		form.appendChild(me.createHiddenElement("rm", me.paypalHTTPMethod == "POST" ? "2" : "0" ));
-		form.appendChild(me.createHiddenElement("upload", "1"));
-		form.appendChild(me.createHiddenElement("business", me.email ));
-		form.appendChild(me.createHiddenElement("currency_code", "me.currency"));
-		
+			optionsString,
+			field;
+
+
 		if( me.taxRate ){
-			form.appendChild(me.createHiddenElement("tax_cart",me.taxCost ));
+			strn = strn +
+				"&tax_cart=" +	me.currencyStringForPaypalCheckout( me.taxCost );
 		}
-		
+
+		me.each(function(item,iter){
+			
+			counter = iter+1;
+			optionsString = "";
+			
+			me.each( item , function( value, x , field ){
+				if( field !== "id" && field !== "price" && field !== "quantity" && field !== "name" && field !== "shipping") {
+					optionsString = optionsString + ", " + field + "=" + value ;
+				}
+			});
+			optionsString = optionsString.substring(2);
+
+			itemsString = itemsString	+ "&item_name_"		+ counter + "=" + item.name	 +
+										  "&item_number_"	+ counter + "=" + counter +
+										  "&quantity_"		+ counter + "=" + item.quantity +
+										  "&amount_"		+ counter + "=" + me.currencyStringForPaypalCheckout( item.price ) +
+										  "&on0_"			+ counter + "=" + "Options" +
+										  "&os0_"			+ counter + "=" + optionsString;
+		});
+
 		if( me.shipping() !== 0){
-			form.appendChild(me.createHiddenElement("handling_cart",  me.shippingCost ));
+			 itemsString = itemsString	+	"&shipping=" + me.currencyStringForPaypalCheckout( me.shippingCost );
 		}
 		
 		if( me.successUrl ){
-			form.appendChild(me.createHiddenElement("return",  me.successUrl ));
+			itemsString = itemsString + "&return=" + me.successUrl;
 		}
 		
 		if( me.cancelUrl ){
-			form.appendChild(me.createHiddenElement("cancel_return",  me.cancelUrl ));
+			itemsString = itemsString + "&cancel_return=" + me.cancelUrl;
 		}
-		
-		
-
-		me.each(function(item,iter){
-
-			counter = iter+1;
-		
-			form.appendChild( me.createHiddenElement( "item_name_"		+ counter, item.name		) );
-			form.appendChild( me.createHiddenElement( "quantity_"		+ counter, item.quantity	) );
-			form.appendChild( me.createHiddenElement( "amount_"			+ counter, item.price		) );
-			form.appendChild( me.createHiddenElement( "item_number_"	+ counter, counter			) );
-			
-			var option_count = 0;
-
-			me.each( item , function( value, x , field ){
-				if( field !== "id" && field !== "price" && field !== "quantity" && field !== "name" && field !== "shipping" && option_count < 10) {
-					form.appendChild( me.createHiddenElement( "on" + option_count + "_"	+ counter, 	field ) );
-					form.appendChild( me.createHiddenElement( "os" + option_count + "_"	+ counter, 	value ) );
-					option_count++;
-				}
-			});
-
-			form.appendChild( me.createHiddenElement( "option_index_" + counter, option_count) );
-
-		});
 
 
-		document.body.appendChild( form );
-		form.submit();
-		document.body.removeChild( form );
-		
+		strn = strn + itemsString ;
+		window.open (strn, "paypal", winpar);
 	};
 
 	me.googleCheckout = function() {
 		var me = this;
 		
 		
-		if( me.currency !== USD && me.currency !== IDR ){
-			error( "Google Checkout only allows the USD and IDR for currency.");
+		if( me.currency !== USD && me.currency !== GBP ){
+			error( "Google Checkout only allows the USD and GBP for currency.");
 			return;
 		} else if( me.merchantId === "" || me.merchantId === null || !me.merchantId ){
 			error( "No merchant Id for google checkout supplied.");
@@ -520,7 +497,7 @@ function Cart(){
 				outputString,
 				element;
 
-			for( var y = 0,ylen = me[ arrayName ].length; y<ylen; y++ ){
+			for( var y = 0,ylen = me[ arrayName ].length; y<ylen; y++ ){ 
 				switch( outlets[x][1] ){
 					case "none":
 						outputString = "" + me[outlets[x][0]];
@@ -620,12 +597,8 @@ function Cart(){
 			case "price":
 				outputValue = me.valueToCurrencyString( item[ info[0].toLowerCase() ] ? item[info[0].toLowerCase()] : " " );
 				break;
-			default:
-				outputValue = item[ info[0].toLowerCase() ] ?
-							typeof 	item[info[0].toLowerCase()] === 'function' ?
-							 		item[info[0].toLowerCase()].call(item) :
-									item[info[0].toLowerCase()] :
-									" ";
+			default: 
+				outputValue = item[ info[0].toLowerCase() ] ? item[info[0].toLowerCase()] : " ";
 				break;
 		}	
 		
@@ -660,7 +633,7 @@ function Cart(){
 	};
 
 	me.addEventToArray = function ( array , functionCall , theEvent ) {
-		var outlet,
+		var outlet, 
 			element;
 		
 		for(var x=0,xlen=array.length; x<xlen; x++ ){
@@ -681,56 +654,6 @@ function Cart(){
 		element.value = value;
 		return element;
 	};
-
-
-	/******************************************************
-			Event Management
-	 ******************************************************/
-	
-	// bind a callback to a simpleCart event
-	me.bind = function( name , callback ){
-		if( typeof callback !== 'function' ){
-			return me;
-		}
-		
-		
-		if (me.events[name] === true ){
-			callback.apply( me );
-		} else if( typeof me.events[name] !== 'undefined' ){
-			me.events[name].push( callback );
-		} else {
-			me.events[name] = [ callback ];
-		}
-		return me;
-	};
-	
-	
-	// trigger event
-	me.trigger = function( name , options ){
-		var returnval = true;
-		if( typeof me.events[name] !== 'undefined' && typeof me.events[name][0] === 'function'){
-			for( var x=0,xlen=me.events[name].length; x<xlen; x++ ){
-				returnval = me.events[name][x].apply( me , (options ? options : [] ) );
-			}
-		}
-		if( returnval === false ){
-			return false;
-		} else {
-			return true;
-		}
-	};
-	
-	// shortcut for ready function
-	me.ready = function( callback ){
-		if( !callback ){
-			me.trigger( 'ready' );
-			me.events['ready'] = true;
-		} else {
-			me.bind( 'ready' , callback );
-		}
-		return me;
-	};
-
 
 
 
@@ -764,7 +687,7 @@ function Cart(){
 				return "&pound;";
 			case CHF:
 				return "CHF&nbsp;";
-			case THB:
+			case THB: 
 				return "&#3647;";
 			case USD:
 			case CAD:
@@ -772,7 +695,7 @@ function Cart(){
 			case NZD:
 			case HKD:
 			case SGD:
-				return "Rp&nbsp;";
+				return "&#36;";
 			default:
 				return "";
 		}
@@ -780,7 +703,7 @@ function Cart(){
 
 
 	me.currencyStringForPaypalCheckout = function( value ){
-		if( me.currencySymbol() == "&#82;&#80;" ){
+		if( me.currencySymbol() == "Rp&nbsp;" ){
 			return "$" + parseFloat( value ).toFixed(2);
 		} else {
 			return "" + parseFloat(value ).toFixed(2);
@@ -793,7 +716,7 @@ function Cart(){
 
 
 	me.valueToCurrencyString = function( value ) {
-		var val =  parseFloat( value );
+		var val =  parseFloat( value ); 
 		if( isNaN(val))
 			val = 0;
 
@@ -829,16 +752,16 @@ function Cart(){
 	 ******************************************************/
 
 	me.hasItem = function ( item ) {
-		var current,
+		var current, 
 			matches,
 			field,
 			match=false;
 		
-		me.each(function(testItem){
+		me.each(function(testItem){ 
 			
 			matches = true;
 			
-			me.each( item , function( value , x , field ){
+			me.each( item , function( value , x , field ){ 
 				
 				if( field !== "quantity" && field !== "id" && item[field] !== testItem[field] ){
 					matches = false;
@@ -867,10 +790,10 @@ function Cart(){
 			, tax: "Tax"
 			, shipping: "Shipping"
 			, image: "Image"
-		}
+		} 
 	};
 	
-	me.language = "en_indonesian";
+	me.language = "en_indonesian"; 
 	
 	me.print = function( input ) {
 		var me = this;
@@ -899,7 +822,7 @@ function Cart(){
 			
 		me.total = 0 ;
 		me.quantity	 = 0;
-		me.each(function(item){
+		me.each(function(item){ 
 			
 			if( item.quantity < 1 ){
 				item.remove();
@@ -938,10 +861,9 @@ function Cart(){
 	}
 
 	me.initialize = function() {
-		me.initializeView();
-		me.load();
-		me.update();
-		me.ready();
+		simpleCart.initializeView();
+		simpleCart.load();
+		simpleCart.update();
 	};
 
 }
@@ -956,19 +878,14 @@ function CartItem() {
 		
 	this.id = "c" + simpleCart.nextId;
 }
-
-
-CartItem.prototype = {
-	
-	set : function ( field , value ){
+	CartItem.prototype.set = function ( field , value ){
 		field = field.toLowerCase();
 		if( typeof( this[field] ) !== "function" && field !== "id" ){
-			value = "" + value;
-			if( field == "quantity"){
+			if( field == "quantity" ){
 				value = value.replace( /[^(\d|\.)]*/gi , "" );
 				value = value.replace(/,*/gi, "");
 				value = parseInt(value,10);
-			} else if( field == "price" ){
+			} else if( field == "price"){
 				value = value.replace( /[^(\d|\.)]*/gi, "");
 				value = value.replace(/,*/gi , "");
 				value = parseFloat( value );
@@ -976,12 +893,10 @@ CartItem.prototype = {
 			if( typeof(value) == "number" && isNaN( value ) ){
 				error( "Improperly formatted input.");
 			} else {
-				if( typeof( value ) === "string" ){
-					if( value.match(/\~|\=/) ){
-						error("Special character ~ or = not allowed: " + value);
-					}
-					value = value.replace(/\~|\=/g, "");
+				if( value.match(/\~|\=/) ){
+					error("Special character ~ or = not allowed: " + value);
 				}
+				value = value.replace(/\~|\=/g, "");
 				this[field] = value;
 				this.checkQuantityAndPrice();
 			}
@@ -989,35 +904,35 @@ CartItem.prototype = {
 			error( "Cannot change " + field + ", this is a reserved field.");
 		}
 		simpleCart.update();
-	},
+	};
 
-	increment : function(){
+	CartItem.prototype.increment = function(){
 		this.quantity = parseInt(this.quantity,10) + 1;
 		simpleCart.update();
-	},
+	};
 
-	decrement : function(){
+	CartItem.prototype.decrement = function(){
 		if( parseInt(this.quantity,10) < 2 ){
 			this.remove();
 		} else {
 			this.quantity = parseInt(this.quantity,10) - 1;
 			simpleCart.update();
 		}
-	},
+	};
 
-	print : function () {
+	CartItem.prototype.print = function () {
 		var returnString = '',
 			field;
 		simpleCart.each(this ,function(item,x,name){ 	
 			returnString+= escape(name) + "=" + escape(item) + "||";
 		});
 		return returnString.substring(0,returnString.length-2);
-	},
+	};
 
 
-	checkQuantityAndPrice : function() {
+	CartItem.prototype.checkQuantityAndPrice = function() {
 
-		if( !this.quantity || this.quantity == null || this.quantity == 'undefined'){
+		if( !this.quantity || this.quantity == null || this.quantity == 'undefined'){ 
 			this.quantity = 1;
 			error('No quantity for item.');
 		} else {
@@ -1040,10 +955,10 @@ CartItem.prototype = {
 				this.price = 0.00;
 			}
 		}
-	},
+	};
 
 
-	parseValuesFromArray : function( array ) {
+	CartItem.prototype.parseValuesFromArray = function( array ) {
 		if( array && array.length && array.length > 0) {
 			for(var x=0, xlen=array.length; x<xlen;x++ ){
 
@@ -1071,13 +986,12 @@ CartItem.prototype = {
 		} else {
 			return false;
 		}
-	},
+	};
 
-	remove : function() {
+	CartItem.prototype.remove = function() {
 		simpleCart.remove(this.id);
 		simpleCart.update();
-	}
-};
+	};
 
 
 
@@ -1088,9 +1002,7 @@ CartItem.prototype = {
 function Shelf(){
 	this.items = {};
 }
-Shelf.prototype = {
-		
-	readPage : function () {
+	Shelf.prototype.readPage = function () {
 		this.items = {};
 		var newItems = getElementsByClassName( "simpleCart_shelfItem" ),
 			newItem;
@@ -1101,9 +1013,9 @@ Shelf.prototype = {
 			me.checkChildren( newItems[x] , newItem );
 			me.items[newItem.id] = newItem;
 		}
-	},
+	};
 
-	checkChildren : function ( item , newItem) {
+	Shelf.prototype.checkChildren = function ( item , newItem) {
 		if( !item.childNodes )
 			return;
 		for(var x=0;item.childNodes[x];x++){
@@ -1127,14 +1039,14 @@ Shelf.prototype = {
 				this.checkChildren( node , newItem );
 			}
 		}
-	},
+	};
 
-	empty : function () {
+	Shelf.prototype.empty = function () {
 		this.items = {};
-	},
+	};
 
 
-	addToCart : function ( id ) {
+	Shelf.prototype.addToCart = function ( id ) {
 		return function(){
 			if( simpleCart.Shelf.items[id]){
 				simpleCart.Shelf.items[id].addToCart();
@@ -1142,8 +1054,7 @@ Shelf.prototype = {
 				error( "Shelf item with id of " + id + " does not exist.");
 			}
 		};
-	}
-};
+	};
 
 
 /********************************************************************************************************
@@ -1154,14 +1065,12 @@ Shelf.prototype = {
 function ShelfItem(){
 	this.id = "s" + simpleCart.nextId++;
 }
-
-ShelfItem.prototype = {
-	
-	remove : function () {
+	ShelfItem.prototype.remove = function () {
 		simpleCart.Shelf.items[this.id] = null;
-	},
+	};
 
-	addToCart : function () {
+
+	ShelfItem.prototype.addToCart = function () {
 		var outStrings = [],
 			valueString,
 			field;
@@ -1201,8 +1110,7 @@ ShelfItem.prototype = {
 		}
 
 		simpleCart.add( outStrings );
-	}
-};
+	};
 
 
 
@@ -1229,7 +1137,7 @@ function readCookie(name) {
 		if (c.indexOf(nameEQ) === 0){
 			var value = unescape(c.substring(nameEQ.length, c.length));
 			return value.replace(/\~/g, '=');
-		}
+		} 
 	}
 	return null;
 }
