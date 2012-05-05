@@ -780,7 +780,7 @@ function Cart(){
 
 
 	me.currencyStringForPaypalCheckout = function( value ){
-		if( me.currencySymbol() == "Rp&nbsp;" ){
+		if( me.currencySymbol() == "&#82;&#80;" ){
 			return "$" + parseFloat( value ).toFixed(2);
 		} else {
 			return "" + parseFloat(value ).toFixed(2);
